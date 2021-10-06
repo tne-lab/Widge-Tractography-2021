@@ -1,0 +1,61 @@
+---
+title: "OCD Tractography NCA"
+output: html_document
+---
+Recipes from https://repub.eur.nl/pub/78323/
+
+```{r setup_libs, include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(NCA)
+library('xtable')
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Necessary Condition Analysis
+Load and inspect dataframe.
+```{r load_integrity}
+integrity <- read.csv('DBS OCD Fiber Analysis Integrity Summary.csv')
+integrity$YBOCS_Resp_Int <- as.numeric(integrity$YBOCS_Resp == "True") 
+integrity
+```
+
+Necessary Condition Analysis on the mean fiber integrity.
+The "ce_fdh" is the one we want because it is what assumes a step function. 
+```{r run_nca_mean}
+nca(integrity,"Mean_Integrity","YBOCS_Resp_Int")
+```
+
+Exploration of multivariate NCA with the individual tracts.
+```{r run_nca_multivariate,cache=TRUE}
+multi_nca<-nca_analysis(integrity,
+             setdiff(colnames(integrity),c("Subject","YBOCS_Resp","MADRS_Resp","YBOCS_Resp_Int")),
+            "YBOCS_Resp_Int",
+            ceilings=c('ce_fdh'),
+            test.rep = 1000,test.p_confidence = 0.95,test.p_threshold = 0.05)
+```
+```{r extract_params_multivariate}
+
+nca_results <-
+  tibble(Name=setdiff(colnames(integrity),c("Subject","YBOCS_Resp","MADRS_Resp","YBOCS_Resp_Int"))) %>%
+  rowwise() %>%
+  mutate(EffectSize = multi_nca$summaries[[Name]]$params[2],
+         P_Val = multi_nca$tests[[Name]]$ce_fdh$p_value)
+nca_results$P_FDR <- p.adjust(nca_results$P_Val,method="BH")
+nca_results <- nca_results %>% arrange(desc(EffectSize))
+#nca_results
+#multi_nca$summaries[[data_cols[1]]]$params[2]   # effect size
+# multi_nca$tests[[data_cols[1]]]$ce_fdh$p_value pval
+# multi_nca$summaries$Mean_Integrity$params[2]
+```
+
+```{r print_multivariate,results="asis"}
+ xt<-xtable(nca_results)
+xt$Name <- gsub("_"," ",
+                gsub('\\.',"-",
+                     gsub("_T_"," ",xt$Name)))
+colnames(xt) <- c("Name","Effect Size","p","p(FDR)")
+ autoformat(xt)
+ digits(xt) <- 3
+ print(xt,type="html",include.rownames = FALSE)
+```
